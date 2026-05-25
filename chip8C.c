@@ -116,17 +116,41 @@ void fetch_and_decode(uint16_t opcode, struct Chip_8 *chip8){
                 uint16_t sub = chip8->V[(opcode & 0x00F0)>>4] - chip8->V[(opcode & 0x0F00)>>8];
 
                 if(sub > 0){
+                    chip8->V[0xF] = 1;
+                }else{
                     chip8->V[0xF] = 0;
+                }
+
+                break;
+
+            case 0x6:
+                chip8->V[0xF] = chip8->V[(opcode & 0x00F0) >> 4] & 0x1;
+
+                chip8->V[(opcode & 0x0F00) >> 8] = chip8->V[(opcode & 0x00F0) >> 4] >> 1;
+
+
+
+                break;
+            
+            case 0x7:
+                uint16_t sub = chip8->V[(opcode & 0x0F00) >> 8] - chip8->V[(opcode & 0x00F0) >> 4];    
+
+                if(sub < 0){
+                    chip8->V[0xF] = 0;
+                
                 }else{
                     chip8->V[0xF] = 1;
                 }
 
-                break;
+                chip8->V[(opcode & 0x0F00) >> 8] = sub;
             
+                break;
 
+            case 0xE:
+                chip8->V[0xF] = (chip8->V[(opcode & 0x00F0) >> 4] & 0x80) >> 7;
 
-
-
+                chip8->V[(opcode & 0x0F00) >> 8] = (chip8->V[(opcode & 0x00F0) >> 4]) << 1;
+                break;
 
 
         }
