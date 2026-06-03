@@ -2,6 +2,36 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stddef.h>
+#include <SDL2/SDL.h>
+
+#define CHIP8_WIDTH 64
+#define CHIP8_HEIGHT 32
+#define SCALE 10
+#define FONT_START 0X050
+#define ROM_START 0X200
+
+
+uint8_t fontset[80] = {
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+};
+
+
 
 struct Chip_8{
     
@@ -21,13 +51,27 @@ struct Chip_8{
 
 
 
+int load_rom(struct Chip_8 *chip8, const char  *filename ){
 
-int main() {
-
-
-
+    FILE *rom = fopen(filename, "rb");
 
 
+    if(rom == NULL){
+        printf("Erro ao abrir rom\n");
+        return 0;
+    }
+
+    size_t bytes_read =  fread(&chip8->memory[ROM_START],
+        1, 
+        sizeof(chip8->memory) - ROM_START,
+        rom
+    );
+
+    fclose(rom);
+
+    printf("rom carregada\n");
+
+    return 1;
 
 }
 
@@ -257,12 +301,37 @@ void fetch_and_decode(uint16_t opcode, struct Chip_8 *chip8){
         break;
 
     }
-    case 0xD:{
+    case 0xD: {
+        uint8_t x_index = (opcode & 0x0F00) >> 8;
+        uint8_t y_index = (opcode & 0x00F0) >> 4;
+        uint8_t height = opcode & 0x000F;
 
+        uint8_t x_pos = chip8->V[x_index] % 64;
+        uint8_t y_pos = chip8->V[y_index] % 32;
 
-    }
+        chip8->V[0xF] = 0;
+
+        for(int row = 0; row < height; row++){
+            uint8_t sprite_byte = chip8->memory[chip8->I + row];
+
+            for(int col = 0; col < 8; col++){
+                uint8_t sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
+
+                if(sprite_pixel){
+                    int screen_x = (x_pos + col) % 64;
+                    int screen_y = (y_pos + row) % 32;
+
+                    if(chip8->display[screen_x][screen_y] == 1){
+                        chip8->V[0xF] = 1;
+                    }
+
+                    chip8->display[screen_x][screen_y] ^= 1;
+                }
+            }
+        }
 
     break;
+    }
 
     case 0xE:{
         uint8_t last_byte = opcode & 0x00FF;
@@ -331,6 +400,11 @@ void fetch_and_decode(uint16_t opcode, struct Chip_8 *chip8){
         break;
 
         case 0x29:{
+            uint8_t x = (opcode & 0x0F00) >> 8;
+            uint8_t digit = chip8->V[x] & 0x0F;
+
+
+            chip8->I = FONT_START + (digit * 5);
 
         }
         break;
@@ -391,4 +465,112 @@ void fetch_and_decode(uint16_t opcode, struct Chip_8 *chip8){
     }
 
     }
+}
+
+
+
+void render_display(SDL_Renderer *renderer, struct Chip_8 *chip8 ){
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+
+    for(int y = 0; y < 32; y++ ){
+        for( int x = 0; x< 64; x++){
+            if(chip8->display[x][y]){
+                SDL_Rect rect = {
+                    x * SCALE,
+                    y * SCALE,
+                    SCALE,
+                    SCALE
+                };  
+                SDL_RenderFillRect(renderer, &rect);
+            }
+
+            
+
+
+
+        }
+    }
+
+
+    SDL_RenderPresent(renderer);
+    
+}
+
+
+
+
+int main(int argc, char *argv[]) {
+    struct Chip_8 chip8;
+    memset(&chip8, 0, sizeof(chip8));
+
+    chip8.PC = ROM_START;
+
+    if(!load_rom(&chip8, "Pong.ch8")){
+        return 1;
+    }
+
+    SDL_Init(SDL_INIT_VIDEO);
+
+    SDL_Window *window = SDL_CreateWindow(
+        "chip-8",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        CHIP8_WIDTH * SCALE,
+        CHIP8_HEIGHT * SCALE,
+        SDL_WINDOW_SHOWN
+    );
+
+    SDL_Renderer *renderer = SDL_CreateRenderer(
+        window,
+        -1,
+        SDL_RENDERER_ACCELERATED
+    );
+
+
+
+
+    for(int i = 0; i < 80; i++){
+        chip8.memory[FONT_START + i] = fontset[i];
+    }
+
+
+    int running = 1;
+
+
+    while(running){
+        SDL_Event event;
+
+        while (SDL_PollEvent(&event))
+        {
+            if(event.type == SDL_QUIT){
+                running = 0;
+            }
+        }
+        
+        render_display(renderer, &chip8);
+
+        SDL_Delay(16);
+
+        uint16_t opcode = (chip8.memory[chip8.PC]<<8 | chip8.memory[chip8.PC+1]);
+        chip8.PC+=2;
+
+        fetch_and_decode(opcode, &chip8);
+
+    }
+
+
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+
+
+
+
+    return 0;
+
+
 }
